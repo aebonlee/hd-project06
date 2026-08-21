@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>지게차 엔진 사양 관리·비교</title>
+<!--
+  지게차 엔진 사양 관리·비교 웹페이지 (기획: 홍근영)
+  - 서버 없이 브라우저 단독 실행 (사내 공유 폴더에 파일째 복사하여 배포)
+  - 외부 네트워크·외부 AI API 호출 없음: 모든 라이브러리 lib/ 에 로컬 동봉 (제약 5)
+  - 데이터 기준은 엑셀 파일(Import 양식 = Export 양식 완전 동일, 3.1.3/3.1.4)
+-->
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div>
+    <h1>지게차 엔진 사양 관리·비교</h1>
+    <div class="subtitle">표준 엑셀 양식 기반 · RPM별 출력·토크 곡선 · 최대 4개 엔진 비교</div>
+  </div>
+  <div class="toolbar">
+    <span class="data-status" id="dataStatus">데이터 없음</span>
+    <a class="form-link" href="templates/엔진사양_표준양식.xlsx" download>표준 양식 내려받기</a>
+    <!-- 3.1.3 엑셀 Import -->
+    <input type="file" id="fileImport" accept=".xlsx,.xls" hidden>
+    <button id="btnImport" class="primary">엑셀 Import</button>
+    <!-- 3.1.4 엑셀 Export (Import 양식과 완전 동일) -->
+    <button id="btnExport">엑셀 Export</button>
+    <button id="btnSample">샘플 데이터 불러오기</button>
+    <button id="btnClear" class="ghost">데이터 지우기</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button id="tabBrowse" class="active">조회</button>
+  <button id="tabCompare">비교 (최대 4개)</button>
+</nav>
+
+<!-- ================================================== 조회 화면 (3.2) -->
+<section class="view active" id="viewBrowse">
+  <div class="browse-layout">
+    <aside class="card">
+      <h2>엔진 검색 <span class="hint">엔진 모델명 / 지게차 모델명</span></h2>
+      <input type="search" class="search-box" id="searchBox"
+             placeholder="예: DP34T 또는 HF250D-9">
+      <ul class="engine-list" id="engineList"></ul>
+    </aside>
+
+    <div>
+      <div class="card" id="specCard">
+        <h2 id="specTitle">엔진 제원</h2>
+        <div id="specBody"><p class="empty-note">왼쪽 목록에서 엔진을 선택하세요.
+          데이터가 없으면 <b>엑셀 Import</b> 또는 <b>샘플 데이터 불러오기</b>를 먼저 실행하세요.</p></div>
+      </div>
+
+      <!-- 3.2.1 출력·토크 곡선 -->
+      <div class="card chart-card" id="chartCard" hidden>
+        <h2>RPM별 출력·토크 곡선</h2>
+        <div class="chart-controls">
+          <span class="group">
+            <span class="group-label">보기</span>
+            <label><input type="radio" name="chartMode" value="dual" checked> 한 차트(이중 Y축)</label>
+            <label><input type="radio" name="chartMode" value="split"> 두 차트로 분리</label>
+          </span>
+          <!-- 3.2.1.4 Y축 범위 — 출력/토크 각각 -->
+          <span class="group">
+            <span class="group-label">출력 Y축</span>
+            <input type="number" id="bPowerMin" placeholder="자동(min)"> ~
+            <input type="number" id="bPowerMax" placeholder="자동(max)"> kW
+          </span>
+          <span class="group">
+            <span class="group-label">토크 Y축</span>
+            <input type="number" id="bTorqueMin" placeholder="자동(min)"> ~
+            <input type="number" id="bTorqueMax" placeholder="자동(max)"> Nm
+          </span>
+          <button id="btnBrowseYReset" class="ghost">축 범위 초기화</button>
+        </div>
+
+        <div id="browseDualWrap" class="chart-wrap">
+          <canvas id="canvasDual"></canvas>
+        </div>
+        <div id="browseSplitWrap" class="chart-split" hidden>
+          <div class="chart-wrap"><canvas id="canvasPower"></canvas></div>
+          <div class="chart-wrap"><canvas id="canvasTorque"></canvas></div>
+        </div>
+
+        <!-- 3.2.1.2 점 클릭 값 판독 영역 -->
+        <div class="point-readout" id="browseReadout">그래프의 점을 클릭하면 값이 표시됩니다. (예: 70kW @ 2300 rpm)</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================== 비교 화면 (3.3) -->
+<section class="view" id="viewCompare">
+  <div class="compare-layout">
+    <div class="card compare-picker">
+      <h2>비교할 엔진 선택 <span class="hint">최대 4개</span></h2>
+      <ul class="engine-checks" id="compareChecks"></ul>
+    </div>
+
+    <!-- 3.2.2.1 비교 표: 엔진 1개당 1컬럼, 왼쪽과 동일하면 "<-" -->
+    <div class="card">
+      <h2>제원 비교 <span class="hint">왼쪽 엔진과 값이 같으면 "&lt;-" 로 표기</span></h2>
+      <div class="compare-table-wrap" id="compareTableWrap">
+        <p class="empty-note">위에서 엔진을 2개 이상 선택하세요.</p>
+      </div>
+    </div>
+
+    <!-- 3.2.2.2 곡선 겹쳐 보기 -->
+    <div class="card" id="compareChartCard" hidden>
+      <h2>출력·토크 곡선 겹쳐 보기 <span class="hint">엔진별 색상 구분 · 출력=실선, 토크=점선</span></h2>
+      <div class="chart-controls">
+        <span class="group">
+          <span class="group-label">출력 Y축</span>
+          <input type="number" id="cPowerMin" placeholder="자동(min)"> ~
+          <input type="number" id="cPowerMax" placeholder="자동(max)"> kW
+        </span>
+        <span class="group">
+          <span class="group-label">토크 Y축</span>
+          <input type="number" id="cTorqueMin" placeholder="자동(min)"> ~
+          <input type="number" id="cTorqueMax" placeholder="자동(max)"> Nm
+        </span>
+        <label><input type="checkbox" id="compareAnnoToggle" checked> 정격/최대 라벨 표시</label>
+        <button id="btnCompareYReset" class="ghost">축 범위 초기화</button>
+      </div>
+      <div class="chart-wrap"><canvas id="canvasCompare"></canvas></div>
+      <div class="point-readout" id="compareReadout">그래프의 점을 클릭하면 값이 표시됩니다.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 라이브러리 (전부 로컬 동봉 — 외부 네트워크 의존 없음) -->
+<script src="lib/xlsx.full.min.js"></script>
+<script src="lib/chart.umd.min.js"></script>
+<script src="lib/chartjs-plugin-annotation.min.js"></script>
+<!-- 애플리케이션 -->
+<script src="js/data.js"></script>
+<script src="js/sample-data.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
