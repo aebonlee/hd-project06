@@ -1,5 +1,7 @@
 # 지게차 엔진 사양 관리·비교 웹페이지
 
+> 🌐 **배포 페이지: [https://aebonlee.github.io/hd-project06/](https://aebonlee.github.io/hd-project06/)** · 저장소: https://github.com/aebonlee/hd-project06
+
 기획: 홍근영 (지게차 엔진 설계) — 생성형 AI 업무자동화 전문가과정 프로젝트
 
 엔진사별로 제각각인 엔진 사양서에서 필요한 제원을 **표준 엑셀 양식**으로 정리해
