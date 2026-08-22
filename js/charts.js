@@ -25,8 +25,9 @@
     root.Chart.defaults.color = INK2;
   }
 
-  /** 숫자 → 표시용 (불필요한 소수점 제거) */
+  /** 숫자 → 표시용 (불필요한 소수점 제거). 값이 없으면 "—" */
   function fmt(n) {
+    if (typeof n !== "number" || !isFinite(n)) return "—";
     return Number(n.toFixed(1)).toString();
   }
 
@@ -42,13 +43,14 @@
       if (d.data.some(function (p) { return p.y != null; })) ds.push(d);
     }
     entries.forEach(function (en) {
+      var curve = en.curve || []; // 곡선 데이터 없는 엔진도 안전하게 처리
       if (which !== "torque") {
         push({
           label: en.model + " 출력(kW)",
           yAxisID: "yPower",
           metric: "power",
           engineModel: en.model,
-          data: en.curve.map(function (p) { return { x: p.rpm, y: p.power }; }),
+          data: curve.map(function (p) { return { x: p.rpm, y: p.power }; }),
           borderColor: en.color,
           backgroundColor: en.color,
           borderWidth: 2,
@@ -65,7 +67,7 @@
           yAxisID: "yTorque",
           metric: "torque",
           engineModel: en.model,
-          data: en.curve.map(function (p) { return { x: p.rpm, y: p.torque }; }),
+          data: curve.map(function (p) { return { x: p.rpm, y: p.torque }; }),
           borderColor: en.color,
           backgroundColor: en.color,
           borderWidth: 2,
