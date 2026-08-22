@@ -23,20 +23,45 @@
 
   var $ = function (id) { return document.getElementById(id); };
 
+  /* ---------------------------------------------------------- 알림 (비차단 토스트) */
+
+  var toastTimer = null;
+  function showToast(msg) {
+    var el = $("toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "toast";
+      el.className = "toast";
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove("show"); }, 8000);
+  }
+
   /* ---------------------------------------------------------- 저장/복원 */
 
   function saveLocal() {
     try {
       if (state.data) localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
       else localStorage.removeItem(STORAGE_KEY);
-    } catch (e) { /* file:// 등에서 저장 불가해도 동작에는 지장 없음 */ }
+    } catch (e) {
+      // 용량 초과, 저장소 차단(file:// 등) — 조용히 넘기지 않고 사용자에게 알린다
+      showToast("브라우저 저장소에 데이터를 저장하지 못했습니다 (" + e.message + "). " +
+        "창을 닫으면 데이터가 사라지니 엑셀 Export 로 보관하세요.");
+    }
   }
 
   function loadLocal() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
       if (raw) state.data = EngineData.normalizeData(JSON.parse(raw));
-    } catch (e) { state.data = null; }
+    } catch (e) {
+      state.data = null;
+      showToast("브라우저 저장소의 데이터를 불러오지 못했습니다 (" + e.message + "). " +
+        "엑셀 Import 로 다시 불러오세요.");
+    }
   }
 
   /* ---------------------------------------------------------- 데이터 설정 */
@@ -70,11 +95,17 @@
       reader.onload = function (e) {
         try {
           var wb = XLSX.read(e.target.result, { type: "array" });
-          var data = EngineData.workbookToData(wb, XLSX);
-          if (!data.engines.length) {
+          var result = EngineData.importWorkbook(wb, XLSX);
+          if (!result.data.engines.length) {
             alert("엔진 데이터가 없습니다. engines 시트를 확인하세요.");
           }
-          setData(data);
+          setData(result.data);
+          // 제외된 행(숫자가 아닌 RPM/출력/토크 등)을 행 번호와 함께 알린다
+          if (result.warnings.length) {
+            var w = result.warnings;
+            showToast("Import 경고 " + w.length + "건 — " + w.slice(0, 3).join(" / ") +
+              (w.length > 3 ? " 외 " + (w.length - 3) + "건" : ""));
+          }
         } catch (err) {
           alert("Import 실패: " + err.message);
         }
@@ -210,6 +241,15 @@
     table.appendChild(tbody);
     body.innerHTML = "";
     body.appendChild(table);
+
+    // 곡선 데이터가 없는 엔진: 그래프 카드를 숨기는 대신 이유를 안내한다
+    var curve = (state.data.curves || {})[engine[EngineData.KEY_MODEL]] || [];
+    if (!curve.length) {
+      var note = document.createElement("p");
+      note.className = "empty-note";
+      note.textContent = "이 엔진은 RPM별 곡선(curves 시트) 데이터가 없어 그래프를 표시할 수 없습니다.";
+      body.appendChild(note);
+    }
   }
 
   /* ---------------------------------------------------------- 그래프 공통 */
@@ -220,8 +260,8 @@
   }
 
   function chartEntry(model, color) {
-    var e = EngineData.findEngine(state.data, model);
-    var curve = state.data.curves[model] || [];
+    var e = state.data ? EngineData.findEngine(state.data, model) : null;
+    var curve = (state.data && state.data.curves[model]) || [];
     var entry = { model: model, color: color, curve: curve, rated: null, maxTorque: null };
     if (e && typeof e.rated_power_kw === "number" && typeof e.rated_power_rpm === "number") {
       entry.rated = { kw: e.rated_power_kw, rpm: e.rated_power_rpm };   // 3.2.1.3
@@ -252,7 +292,7 @@
   function renderBrowseChart() {
     destroyBrowseCharts();
     var model = state.selectedModel;
-    var hasCurve = state.data && model && (state.data.curves[model] || []).length > 0;
+    var hasCurve = !!(state.data && model && (state.data.curves[model] || []).length > 0);
     $("chartCard").hidden = !hasCurve;
     if (!hasCurve) return;
 
@@ -422,6 +462,7 @@
   // 3.2.2.2: 곡선 겹쳐 보기 (엔진별 색상 구분)
   function renderCompareChart() {
     if (charts.compare) { charts.compare.destroy(); charts.compare = null; }
+    if (!state.data) { $("compareChartCard").hidden = true; return; }
     var models = state.compare.filter(function (m) {
       return (state.data.curves[m] || []).length > 0;
     });

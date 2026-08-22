@@ -293,3 +293,29 @@ table.compare-table {
 }
 .compare-table td.label { color: var(--ink-2); }
 .compare-table td.same { color: var(--muted); }
+
+/* ------------------------------------------------------------ 토스트 (비차단 경고) */
+/* 저장 실패·Import 경고 등을 화면을 막지 않고 알린다 */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translate(-50%, 12px);
+  max-width: min(560px, calc(100vw - 32px));
+  background: #4a3208;
+  color: #fff7e6;
+  border: 1px solid #b98a1e;
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 6px 24px rgba(11, 11, 11, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s;
+  z-index: 100;
+}
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}

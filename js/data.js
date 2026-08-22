@@ -151,30 +151,60 @@
   /* ------------------------------------------------------------------ */
 
   /**
-   * XLSX 통합문서를 내부 데이터 구조로 변환한다.
+   * XLSX 통합문서를 검증 후 내부 데이터 구조로 변환한다 (3.1.3).
+   *  - 필수 시트(engines/curves) 존재 확인 — schema 는 선택
+   *  - 필수 컬럼 확인: engines 의 'engine_model', curves 의 4개 헤더
+   *    → 누락 시 무엇이 빠졌는지(시트명/컬럼명) 명시한 한국어 오류를 던진다
+   *  - curves 의 RPM/출력(kW)/토크(Nm) 값이 숫자가 아닌 행은
+   *    행 번호와 함께 warnings 로 보고하고 제외한다 (차트 NaN 방지)
    * @param {object} wb   SheetJS workbook
    * @param {object} XLSX SheetJS 라이브러리 객체
+   * @returns {{data: object, warnings: string[]}}
    */
-  function workbookToData(wb, XLSX) {
-    var enginesSheet = wb.Sheets[SHEET_ENGINES];
-    if (!enginesSheet) {
-      throw new Error("표준 양식이 아닙니다: 'engines' 시트가 없습니다.");
+  function importWorkbook(wb, XLSX) {
+    // 1) 필수 시트 확인 (schema 시트는 선택 — 없으면 기본 스키마 사용)
+    var missingSheets = [SHEET_ENGINES, SHEET_CURVES].filter(function (name) {
+      return !wb.Sheets[name];
+    });
+    if (missingSheets.length) {
+      throw new Error("표준 양식이 아닙니다: '" + missingSheets.join("', '") + "' 시트가 없습니다.");
     }
-    var engineRows = XLSX.utils.sheet_to_json(enginesSheet, { defval: null });
+
+    // 2) 필수 컬럼 확인
+    var engineHeader = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_ENGINES], { header: 1 })[0] || [];
+    if (engineHeader.indexOf(KEY_MODEL) < 0) {
+      throw new Error("engines 시트에 필수 컬럼 '" + KEY_MODEL + "'(엔진 모델명 키)이 없습니다.");
+    }
+    var curveHeader = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_CURVES], { header: 1 })[0] || [];
+    var missingCols = CURVE_HEADERS.filter(function (h) { return curveHeader.indexOf(h) < 0; });
+    if (missingCols.length) {
+      throw new Error("curves 시트에 필수 컬럼 '" + missingCols.join("', '") + "'이(가) 없습니다.");
+    }
+
+    var warnings = [];
+    var engineRows = XLSX.utils.sheet_to_json(wb.Sheets[SHEET_ENGINES], { defval: null });
 
     var curveMap = {};
-    if (wb.Sheets[SHEET_CURVES]) {
-      XLSX.utils.sheet_to_json(wb.Sheets[SHEET_CURVES], { defval: null }).forEach(function (r) {
-        var model = normalizeCell(r[CURVE_HEADERS[0]]);
-        if (isBlank(model)) return;
-        if (!curveMap[model]) curveMap[model] = [];
-        curveMap[model].push({
-          rpm: normalizeCell(r[CURVE_HEADERS[1]]),
-          power: normalizeCell(r[CURVE_HEADERS[2]]),
-          torque: normalizeCell(r[CURVE_HEADERS[3]])
-        });
-      });
-    }
+    XLSX.utils.sheet_to_json(wb.Sheets[SHEET_CURVES], { defval: null }).forEach(function (r, i) {
+      var excelRow = i + 2; // 1행은 헤더
+      var model = normalizeCell(r[CURVE_HEADERS[0]]);
+      if (isBlank(model)) return;
+      var rpm = normalizeCell(r[CURVE_HEADERS[1]]);
+      var power = normalizeCell(r[CURVE_HEADERS[2]]);
+      var torque = normalizeCell(r[CURVE_HEADERS[3]]);
+      // 3) 숫자 검증: 값이 있는데 숫자가 아니면 해당 행 제외 + 경고 (행 번호 명시)
+      var bad = [];
+      if (rpm !== null && typeof rpm !== "number") bad.push(CURVE_HEADERS[1] + " '" + rpm + "'");
+      if (power !== null && typeof power !== "number") bad.push(CURVE_HEADERS[2] + " '" + power + "'");
+      if (torque !== null && typeof torque !== "number") bad.push(CURVE_HEADERS[3] + " '" + torque + "'");
+      if (bad.length) {
+        warnings.push("curves 시트 " + excelRow + "행(" + model + "): " +
+          bad.join(", ") + " — 숫자가 아니어서 이 행을 제외했습니다.");
+        return;
+      }
+      if (!curveMap[model]) curveMap[model] = [];
+      curveMap[model].push({ rpm: rpm, power: power, torque: torque });
+    });
 
     var schemaRows = [];
     if (wb.Sheets[SHEET_SCHEMA]) {
@@ -189,7 +219,15 @@
       });
     }
 
-    return normalizeData({ schema: schemaRows, engines: engineRows, curves: curveMap });
+    return {
+      data: normalizeData({ schema: schemaRows, engines: engineRows, curves: curveMap }),
+      warnings: warnings
+    };
+  }
+
+  /** importWorkbook 의 데이터만 반환하는 래퍼 (기존 호출부/round-trip 테스트 호환) */
+  function workbookToData(wb, XLSX) {
+    return importWorkbook(wb, XLSX).data;
   }
 
   /* ------------------------------------------------------------------ */
@@ -404,6 +442,7 @@
     SAME_MARK: SAME_MARK,
     DEFAULT_SCHEMA: DEFAULT_SCHEMA,
     normalizeData: normalizeData,
+    importWorkbook: importWorkbook,
     workbookToData: workbookToData,
     dataToWorkbook: dataToWorkbook,
     engineColumnKeys: engineColumnKeys,
