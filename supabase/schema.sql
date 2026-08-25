@@ -124,7 +124,14 @@ create trigger engine_touch before update on public.engine
 -- 3. 뷰
 -- ----------------------------------------------------------------------------
 
-create or replace view public.engine_view as
+
+-- ⚠ 뷰에는 `with (security_invoker = true)` 를 붙인다.
+--   붙이지 않으면 뷰는 **만든 사람(postgres)의 권한**으로 돌아, 뷰를 읽을 수 있는
+--   사람이 밑에 깔린 표의 RLS 를 통째로 지나친다. 표만 잠그고 뷰를 안 잠그면 헛일이다.
+--   (hd-project03 에서 실제로 남의 업체 실사 결과가 뷰로 그대로 보였다.
+--    tests/server.test.js 의 "업체는 보고서 뷰로도 남의 자료를 볼 수 없다" 가 잡는다)
+--   security_invoker 는 PostgreSQL 15 부터. Supabase 는 15 이상이다.
+create or replace view public.engine_view with (security_invoker = true) as
 select e.*,
        public.kw_to_ps(e.rated_power_kw) as rated_power_ps,
        (select count(*) from public.curve c where c.engine_id = e.id) as curve_points,
@@ -133,13 +140,13 @@ select e.*,
 from public.engine e;
 
 -- 곡선 점이 너무 적으면 그래프가 직선으로 보인다. 조용히 넘어가지 않게 드러낸다.
-create or replace view public.thin_curves as
+create or replace view public.thin_curves with (security_invoker = true) as
 select id, maker, model, curve_points
 from public.engine_view
 where curve_points < 5;
 
 -- 지게차 모델로 찾기
-create or replace view public.by_forklift as
+create or replace view public.by_forklift with (security_invoker = true) as
 select a.forklift_model, a.capacity_ton, e.id as engine_id, e.maker, e.model,
        e.rated_power_kw, e.max_torque_nm
 from public.application a
