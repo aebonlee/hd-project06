@@ -2,6 +2,10 @@
 
 > 🌐 **배포 페이지: [https://aebonlee.github.io/hd-project06/](https://aebonlee.github.io/hd-project06/)** · 저장소: https://github.com/aebonlee/hd-project06
 
+> 🗄️ **Supabase 를 붙이려면 → [`SUPABASE-설정.md`](SUPABASE-설정.md)**
+> 데이터베이스는 **수강생 본인 계정**에 만듭니다. 계정 만들기부터 확인까지 단계별로 적어 두었습니다.
+
+
 기획: 홍근영 (지게차 엔진 설계) — 생성형 AI 업무자동화 전문가과정 프로젝트
 
 엔진사별로 제각각인 엔진 사양서에서 필요한 제원을 **표준 엑셀 양식**으로 정리해
